@@ -248,28 +248,28 @@ const Wardrobe: React.FC = () => {
 
         {/* Clothing overlays on mannequin */}
         {getSelectedImg('cap') && (
-          <div className="absolute" style={{ top:'2%', left:'35%', width:'30%', height:'12%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('cap')!} alt="" className="w-full h-full object-contain rounded-lg" style={{ filter:'drop-shadow(0 4px 12px rgba(0,0,0,0.2))' }} />
+          <div className="absolute z-30 flex justify-center items-end" style={{ top:'3%', left:'35%', width:'30%', height:'12%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
+            <img src={getSelectedImg('cap')!} alt="" className="max-w-full max-h-full object-contain" style={{ filter:'drop-shadow(0 4px 8px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
           </div>
         )}
         {getSelectedImg('goggles') && (
-          <div className="absolute" style={{ top:'12%', left:'33%', width:'34%', height:'8%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('goggles')!} alt="" className="w-full h-full object-contain rounded-lg" style={{ filter:'drop-shadow(0 4px 12px rgba(0,0,0,0.2))' }} />
+          <div className="absolute z-40 flex justify-center items-center" style={{ top:'13%', left:'35%', width:'30%', height:'8%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
+            <img src={getSelectedImg('goggles')!} alt="" className="max-w-full max-h-full object-contain" style={{ filter:'drop-shadow(0 2px 6px rgba(0,0,0,0.2))', mixBlendMode:'multiply' }} />
           </div>
         )}
         {getSelectedImg('topwear') && (
-          <div className="absolute" style={{ top:'22%', left:'25%', width:'50%', height:'28%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('topwear')!} alt="" className="w-full h-full object-contain rounded-xl" style={{ filter:'drop-shadow(0 6px 20px rgba(0,0,0,0.25))' }} />
+          <div className="absolute z-20 flex justify-center items-center" style={{ top:'18%', left:'22%', width:'56%', height:'35%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
+            <img src={getSelectedImg('topwear')!} alt="" className="w-full h-full object-contain" style={{ filter:'drop-shadow(0 6px 12px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
           </div>
         )}
         {getSelectedImg('bottomwear') && (
-          <div className="absolute" style={{ top:'50%', left:'28%', width:'44%', height:'30%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('bottomwear')!} alt="" className="w-full h-full object-contain rounded-xl" style={{ filter:'drop-shadow(0 6px 20px rgba(0,0,0,0.25))' }} />
+          <div className="absolute z-10 flex justify-center items-start" style={{ top:'46%', left:'25%', width:'50%', height:'36%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
+            <img src={getSelectedImg('bottomwear')!} alt="" className="w-full h-full object-contain" style={{ filter:'drop-shadow(0 6px 12px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
           </div>
         )}
         {getSelectedImg('footwear') && (
-          <div className="absolute" style={{ bottom:'2%', left:'30%', width:'40%', height:'14%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('footwear')!} alt="" className="w-full h-full object-contain rounded-lg" style={{ filter:'drop-shadow(0 4px 12px rgba(0,0,0,0.2))' }} />
+          <div className="absolute z-20 flex justify-center items-end" style={{ bottom:'4%', left:'28%', width:'44%', height:'14%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
+            <img src={getSelectedImg('footwear')!} alt="" className="w-full h-full object-contain" style={{ filter:'drop-shadow(0 4px 8px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
           </div>
         )}
 
