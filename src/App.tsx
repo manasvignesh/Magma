@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, Sparkles, X, Image as ImageIcon, Shirt, Home, User, Wand2, Layers, ChevronRight, Heart, Share2, ArrowLeft, Loader2, Maximize2, CheckCircle, RefreshCw } from 'lucide-react';
+import { Camera, Upload, Sparkles, X, Star, Image as ImageIcon, Shirt, Home, User, Wand2, Layers, ChevronRight, Heart, Share2, ArrowLeft, Loader2, Maximize2, CheckCircle, RefreshCw } from 'lucide-react';
 import { client } from "@gradio/client";
 import { GoogleGenAI } from '@google/genai';
 import Wardrobe from './Wardrobe';
@@ -75,6 +75,8 @@ export default function App() {
   const [suggestPreferences, setSuggestPreferences] = useState('');
   const [suggestResults, setSuggestResults] = useState<any>(null);
   const [suggestError, setSuggestError] = useState(false);
+  const [suggestStage, setSuggestStage] = useState<string>(''); // SSE pipeline stage
+  const [suggestProducts, setSuggestProducts] = useState<Record<string, any[]>>({}); // product results
   const [selectedOutfit, setSelectedOutfit] = useState<any>(null); // Viewing outfit detail
   const [activeFilter, setActiveFilter] = useState('All');
   const [aiTrialRoomOutfit, setAiTrialRoomOutfit] = useState<any>(null); // Trial Room specific
@@ -286,44 +288,108 @@ export default function App() {
 
 
   const handleGetSuggestions = async () => {
+    if (!personImage) return;
     setSuggestStep(5); // Loading
     setSuggestError(false);
-    const promptStr = `You are a fashion assistant.
+    setSuggestStage('uploading_photo');
+    setSuggestResults(null);
+    setSuggestProducts({});
 
-A user has uploaded their photo and provided the following:
-- Event: ${suggestEvent}
-- Style: ${suggestStyle}
-- Preferences: ${suggestPreferences}
+    try {
+      const formData = new FormData();
+      formData.append('image', personImage);
+      formData.append('occasion', suggestEvent);
+      formData.append('style', suggestStyle);
+      formData.append('preferences', suggestPreferences);
 
-Based on their appearance, suggest outfits that would suit them.
+      const response = await fetch('/api/style/analyze', {
+        method: 'POST',
+        body: formData,
+      });
 
-Rules:
-- Be natural and friendly
-- Do NOT mention AI or analysis
-- Keep suggestions realistic
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(err.error || `Server error: ${response.status}`);
+      }
 
-Output ONLY in JSON format:
+      // Read SSE stream
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream');
 
-{
-  "bodyType": "short friendly description",
-  "fitAdvice": "what fits them best",
-  "styleVibe": "casual / ethnic / modern etc.",
-  "outfitSuggestions": [
-    {
-      "title": "Outfit name",
-      "description": "clothing combo",
-      "reason": "why it suits them",
-      "imagePrompt": "high quality fashion photo of outfit"
-    }
-  ]
-}`;
-    
-    const results = await handleRunAnalysis('suggestions', promptStr);
-    if (results) {
-       setSuggestResults(results);
-       setSuggestStep(6); // Results
-    } else {
-       setSuggestError(true);
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            setSuggestStage(event.stage);
+
+            if (event.stage === 'error') {
+              throw new Error(event.error || event.message);
+            }
+
+            // Progressively populate results
+            if (event.data?.analysis) {
+              setSuggestResults((prev: any) => ({
+                ...prev,
+                bodyType: event.data.analysis.bodyType,
+                physiqueAnalysis: event.data.analysis.physiqueAnalysis,
+                faceStructure: event.data.analysis.faceStructure,
+                fitAdvice: event.data.analysis.fitAdvice || event.data.analysis.fitSuggestions?.join(', '),
+                styleVibe: event.data.analysis.vibe,
+                skinTone: event.data.analysis.skinTone,
+                recommendedColors: event.data.analysis.recommendedColors,
+                bestColors: event.data.analysis.bestColors,
+                recommendedFits: event.data.analysis.recommendedFits,
+                avoid: event.data.analysis.avoid,
+                fashionInspiration: event.data.analysis.fashionInspiration,
+              }));
+            }
+            if (event.data?.outfits) {
+              setSuggestResults((prev: any) => ({
+                ...prev,
+                outfitSuggestions: event.data.outfits.map((o: any) => ({
+                  title: o.title,
+                  description: [o.topwear, o.bottomwear, o.footwear].filter(Boolean).join(' + '),
+                  reason: `${o.topwear} paired with ${o.bottomwear} and ${o.footwear}${o.layering && o.layering !== 'none' ? `, layered with ${o.layering}` : ''}`,
+                  topwear: o.topwear,
+                  bottomwear: o.bottomwear,
+                  footwear: o.footwear,
+                  accessories: o.accessories,
+                  keywords: o.keywords,
+                  imagePrompt: o.imagePrompt || `Fashion catalog photo: ${o.topwear} with ${o.bottomwear}, ${o.footwear}, clean studio background, full body, high detail`,
+                })),
+              }));
+            }
+            if (event.data?.products) {
+              setSuggestProducts(event.data.products);
+            }
+
+            if (event.stage === 'completed') {
+              setSuggestStep(6);
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+          }
+        }
+      }
+
+      // If we never got 'completed', check if we have results
+      if (suggestStep !== 6) {
+        setSuggestStep(6);
+      }
+    } catch (err: any) {
+      console.error('Suggestion pipeline error:', err);
+      setSuggestError(true);
     }
   };
 
@@ -787,12 +853,16 @@ Output ONLY in JSON format:
               </div>
             )}
 
-            {/* Step 5: Loading */}
+            {/* Step 5: Loading with Live Progress */}
             {suggestStep === 5 && (
-              <div className="flex flex-col items-center justify-center mt-20 gap-8">
+              <div className="flex flex-col items-center justify-center mt-16 gap-8">
                  {suggestError ? (
                    <>
-                     <h2 className="text-xl font-medium text-red-600 text-center px-8">Couldn't fetch suggestions, try again</h2>
+                     <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mb-2">
+                       <X className="w-10 h-10 text-red-400" />
+                     </div>
+                     <h2 className="text-xl font-medium text-red-600 text-center px-8">Couldn't fetch suggestions</h2>
+                     <p className="text-gray-500 text-sm text-center px-12">The AI pipeline encountered an error. Please try again.</p>
                      <button 
                        onClick={handleGetSuggestions}
                        className="py-3 px-8 rounded-full font-bold text-white shadow-lg bg-brand-500 hover:bg-brand-600 active:scale-95 transition-all"
@@ -803,30 +873,52 @@ Output ONLY in JSON format:
                    </>
                  ) : (
                    <>
-                     <h2 className="text-xl font-medium text-gray-800 text-center px-8">Analyzing your photo and preferences...</h2>
+                     <h2 className="text-xl font-medium text-gray-800 text-center px-8">
+                       {suggestStage === 'uploading_photo' && 'Processing your photo...'}
+                       {suggestStage === 'analyzing_body' && 'Analyzing your body & style...'}
+                       {suggestStage === 'understanding_style' && 'Understanding your vibe...'}
+                       {suggestStage === 'generating_outfits' && 'Curating outfit picks...'}
+                       {suggestStage === 'searching_products' && 'Finding matching products...'}
+                       {!suggestStage && 'Connecting to style engine...'}
+                     </h2>
                      
-                     <div className="relative w-40 h-40 flex items-center justify-center">
+                     <div className="relative w-36 h-36 flex items-center justify-center">
                         <div className="absolute inset-0 border-4 border-brand-100 rounded-full animate-pulse"></div>
-                        <div className="absolute inset-0 border-4 border-brand-500 rounded-full border-t-transparent animate-spin"></div>
-                        <Sparkles className="w-12 h-12 text-brand-400" />
+                        <div className="absolute inset-0 border-4 border-brand-500 rounded-full border-t-transparent animate-spin" style={{ animationDuration: '0.8s' }}></div>
+                        <Sparkles className="w-10 h-10 text-brand-400" />
                      </div>
 
-                     <div className="flex flex-col gap-4 text-sm font-medium text-gray-600">
-                        <div className="flex items-center gap-3">
-                           <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center">✓</div>
-                           Analyzing body structure
-                        </div>
-                        <div className="flex items-center gap-3">
-                           <div className="w-6 h-6 rounded-full bg-brand-100 text-brand-500 flex items-center justify-center animate-pulse">
-                             <Loader2 className="w-3 h-3 animate-spin" />
-                           </div>
-                           Understanding your vibe
-                        </div>
-                        <div className="flex items-center gap-3 opacity-50">
-                           <div className="w-6 h-6 rounded-full border-2 border-gray-200"></div>
-                           Picking best outfits
-                        </div>
-                     </div>
+                     {(() => {
+                       const stages = [
+                         { key: 'uploading_photo', label: 'Processing photo' },
+                         { key: 'analyzing_body', label: 'Analyzing body structure' },
+                         { key: 'understanding_style', label: 'Understanding your vibe' },
+                         { key: 'generating_outfits', label: 'Generating outfits' },
+                         { key: 'searching_products', label: 'Searching products' },
+                       ];
+                       const currentIdx = stages.findIndex(s => s.key === suggestStage);
+                       return (
+                         <div className="flex flex-col gap-3 text-sm font-medium text-gray-600 w-full max-w-xs">
+                           {stages.map((s, i) => {
+                             const isDone = i < currentIdx;
+                             const isCurrent = i === currentIdx;
+                             const isPending = i > currentIdx;
+                             return (
+                               <div key={s.key} className={`flex items-center gap-3 transition-all duration-500 ${isPending ? 'opacity-40' : 'opacity-100'}`}>
+                                 {isDone ? (
+                                   <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs"><CheckCircle className="w-4 h-4" /></div>
+                                 ) : isCurrent ? (
+                                   <div className="w-6 h-6 rounded-full bg-brand-100 text-brand-500 flex items-center justify-center animate-pulse"><Loader2 className="w-3 h-3 animate-spin" /></div>
+                                 ) : (
+                                   <div className="w-6 h-6 rounded-full border-2 border-gray-200"></div>
+                                 )}
+                                 <span className={isDone ? 'text-green-700' : isCurrent ? 'text-brand-600 font-semibold' : ''}>{s.label}</span>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       );
+                     })()}
                    </>
                  )}
               </div>
@@ -843,32 +935,143 @@ Output ONLY in JSON format:
                   </div>
                 </header>
 
-                <div className="bg-brand-50 p-4 rounded-2xl mb-4 border border-brand-100">
-                  <h3 className="font-semibold text-brand-800 mb-1">Your Style Profile</h3>
-                  <p className="text-sm text-gray-700"><span className="font-medium">Body Type:</span> {suggestResults?.bodyType}</p>
-                  <p className="text-sm text-gray-700 mt-1"><span className="font-medium">Fit Advice:</span> {suggestResults?.fitAdvice}</p>
-                  <p className="text-sm text-gray-700 mt-1"><span className="font-medium">Vibe:</span> {suggestResults?.styleVibe}</p>
+                <div className="bg-brand-50 p-5 rounded-3xl mb-4 border border-brand-100 flex flex-col gap-5">
+                  <h3 className="font-bold text-xl text-brand-900 tracking-tight">Style DNA</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                     <div className="bg-white/90 p-4 rounded-2xl border border-white soft-shadow flex flex-col gap-1">
+                       <span className="text-xs font-semibold text-brand-500 uppercase tracking-widest">Physique</span>
+                       <p className="font-medium text-gray-900 leading-snug">{suggestResults?.physiqueAnalysis || "Balanced proportions"}</p>
+                     </div>
+                     
+                     <div className="bg-white/90 p-4 rounded-2xl border border-white soft-shadow flex flex-col gap-1">
+                       <span className="text-xs font-semibold text-brand-500 uppercase tracking-widest">Face Structure</span>
+                       <p className="font-medium text-gray-900 leading-snug">{suggestResults?.faceStructure || "Average"}</p>
+                     </div>
+
+                     <div className="bg-white/90 p-4 rounded-2xl border border-white soft-shadow flex flex-col gap-1 md:col-span-2">
+                       <span className="text-xs font-semibold text-brand-500 uppercase tracking-widest">Aesthetic</span>
+                       <p className="font-medium text-gray-900 leading-snug">{suggestResults?.styleVibe || "Minimal Modern"}</p>
+                     </div>
+                  </div>
+                  
+                  <div className="h-px w-full bg-brand-200/50 my-1"></div>
+
+                  <div className="flex flex-col gap-3">
+                     <h4 className="font-bold text-gray-900">Best Fits</h4>
+                     <div className="flex flex-wrap gap-2">
+                        {suggestResults?.recommendedFits?.map((fit: string, idx: number) => (
+                           <span key={idx} className="bg-brand-100 text-brand-800 text-sm px-3 py-1.5 rounded-lg font-medium">{fit}</span>
+                        ))}
+                     </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                     <h4 className="font-bold text-gray-900">Color Palette</h4>
+                     <div className="flex flex-wrap gap-2">
+                        {suggestResults?.bestColors?.map((c: string, idx: number) => (
+                           <span key={idx} className="bg-gray-100 text-gray-700 border border-gray-200 text-sm px-3 py-1.5 rounded-lg font-medium capitalize flex items-center gap-2">
+                              <span className="w-3 h-3 rounded-full border shadow-sm" style={{backgroundColor: c.split(' ').pop() || c}}></span>
+                              {c}
+                           </span>
+                        ))}
+                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                     <div className="bg-red-50 p-4 rounded-2xl border border-red-100/50 flex flex-col gap-2">
+                        <span className="text-xs font-bold text-red-500 uppercase tracking-widest flex items-center gap-1"><X className="w-3 h-3"/> Avoid</span>
+                        <ul className="text-sm text-red-900/80 space-y-1">
+                           {suggestResults?.avoid?.map((item: string, idx: number) => <li key={idx}>• {item}</li>)}
+                        </ul>
+                     </div>
+                     <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100/50 flex flex-col gap-2">
+                        <span className="text-xs font-bold text-blue-500 uppercase tracking-widest flex items-center gap-1"><Star className="w-3 h-3"/> Inspiration</span>
+                        <ul className="text-sm text-blue-900/80 space-y-1">
+                           {suggestResults?.fashionInspiration?.map((item: string, idx: number) => <li key={idx}>• {item}</li>)}
+                        </ul>
+                     </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                   {suggestResults?.outfitSuggestions?.map((outfit: any, i: number) => (
-                      <div 
-                         key={i} 
-                         onClick={() => setSelectedOutfit(outfit)}
-                         className="flex flex-col gap-3 group cursor-pointer"
-                      >
-                         <div className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-gray-200 soft-shadow">
-                            <img src={`https://image.pollinations.ai/prompt/${encodeURIComponent(outfit.imagePrompt)}?width=400&height=500&nologo=true`} alt={outfit.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
+                <div className="flex items-center justify-between mt-6 mb-4">
+                  <h3 className="text-xl font-bold text-gray-900 tracking-tight">Curated Outfits</h3>
+                </div>
+
+                <div className="flex flex-col gap-8">
+                   {suggestResults?.outfitSuggestions?.map((outfit: any, i: number) => {
+                      const allProducts = outfit.keywords?.flatMap((kw: string) => suggestProducts[kw.trim().toLowerCase()] || []) || [];
+                      
+                      return (
+                      <div key={i} className="flex flex-col gap-4">
+                         <div className="relative aspect-[4/5] rounded-3xl overflow-hidden bg-gray-200 soft-shadow">
+                            <img src={`https://image.pollinations.ai/prompt/${encodeURIComponent(outfit.imagePrompt)}?width=800&height=1000&nologo=true`} alt={outfit.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
                             <div className="absolute inset-0 bg-gradient-to-br from-brand-100 to-gray-200 flex flex-col items-center justify-center p-4 text-center hidden">
-                               <Shirt className="w-8 h-8 text-brand-300 mb-2 opacity-50" />
-                               <span className="text-xs font-semibold text-gray-600 leading-snug">{outfit.title?.split(' ').slice(0,3).join(' ')}</span>
+                               <Shirt className="w-12 h-12 text-brand-300 mb-3 opacity-50" />
+                               <span className="text-sm font-semibold text-gray-600 leading-snug">{outfit.title}</span>
                             </div>
-                            <button className="absolute top-2 right-2 p-1.5 bg-white/80 backdrop-blur-sm rounded-full text-gray-500 hover:text-brand-500 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Heart className="w-4 h-4" />
+                         </div>
+                         
+                         <div>
+                            <div className="flex items-center justify-between mb-2">
+                               <h4 className="text-xl font-bold text-gray-900">{outfit.title}</h4>
+                               <button className="p-2 rounded-full bg-gray-50 text-gray-400 hover:text-brand-500 hover:bg-brand-50 transition-colors">
+                                 <Heart className="w-5 h-5" />
+                               </button>
+                            </div>
+                            
+                            <div className="flex flex-col gap-1.5 mb-4">
+                              {outfit.topwear && <p className="text-sm text-gray-700"><span className="font-semibold text-gray-900">Top:</span> {outfit.topwear}</p>}
+                              {outfit.bottomwear && <p className="text-sm text-gray-700"><span className="font-semibold text-gray-900">Bottom:</span> {outfit.bottomwear}</p>}
+                              {outfit.footwear && <p className="text-sm text-gray-700"><span className="font-semibold text-gray-900">Shoes:</span> {outfit.footwear}</p>}
+                            </div>
+
+                            {/* Products Section */}
+                            <div className="mt-2 pt-4 border-t border-gray-100">
+                               <h5 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                 <Shirt className="w-4 h-4 text-brand-500" />
+                                 Shop This Look
+                               </h5>
+                               
+                               {allProducts.length > 0 ? (
+                                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                                    {allProducts.slice(0, 10).map((p: any, pi: number) => (
+                                      <a
+                                        key={pi}
+                                        href={p.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-shrink-0 w-36 bg-gray-50 rounded-xl overflow-hidden border border-gray-100 hover:shadow-md transition-shadow group flex flex-col"
+                                      >
+                                        <div className="w-full aspect-square bg-white flex items-center justify-center overflow-hidden">
+                                          <img src={p.image} alt={p.title} className="w-full h-full object-contain group-hover:scale-105 transition-transform" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                        </div>
+                                        <div className="p-2 flex flex-col flex-grow">
+                                          <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight flex-grow">{p.title}</p>
+                                          <p className="text-sm font-bold text-brand-600 mt-1">{p.price}</p>
+                                          <p className="text-[10px] text-gray-400 mt-0.5 mb-2 line-clamp-1">{p.store}</p>
+                                          <button className="w-full py-1.5 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 transition-colors mt-auto">Buy Now</button>
+                                        </div>
+                                      </a>
+                                    ))}
+                                  </div>
+                               ) : (
+                                  <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+                                    <p className="text-sm text-gray-500">Searching for matching products...</p>
+                                  </div>
+                               )}
+                            </div>
+                            
+                            <button 
+                               onClick={() => startTrialRoomFromSuggestion(outfit)}
+                               className="w-full mt-4 py-3 rounded-xl font-bold text-brand-600 border-2 border-brand-100 hover:bg-brand-50 transition-colors flex justify-center items-center gap-2 text-sm"
+                            >
+                              <Wand2 className="w-4 h-4" />
+                              Try using AI Trial Room
                             </button>
                          </div>
                       </div>
-                   ))}
+                   )})}
                 </div>
               </div>
             )}
@@ -894,29 +1097,95 @@ Output ONLY in JSON format:
                          <span className="text-sm font-normal text-gray-500">{selectedOutfit.title}</span>
                       </div>
                    </div>
-                                 <div>
+                   <div>
                       <h2 className="text-xl font-bold text-gray-900 mb-2 leading-tight">{selectedOutfit.title}</h2>
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {selectedOutfit.style && (
-                           <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-md">{selectedOutfit.style}</span>
+                      
+                      {/* Outfit Breakdown */}
+                      <div className="flex flex-col gap-2 mb-4">
+                        {selectedOutfit.topwear && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded font-medium text-xs">Top</span>
+                            <span className="text-gray-700">{selectedOutfit.topwear}</span>
+                          </div>
+                        )}
+                        {selectedOutfit.bottomwear && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium text-xs">Bottom</span>
+                            <span className="text-gray-700">{selectedOutfit.bottomwear}</span>
+                          </div>
+                        )}
+                        {selectedOutfit.footwear && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded font-medium text-xs">Shoes</span>
+                            <span className="text-gray-700">{selectedOutfit.footwear}</span>
+                          </div>
+                        )}
+                        {selectedOutfit.accessories?.length > 0 && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded font-medium text-xs">Accessories</span>
+                            <span className="text-gray-700">{selectedOutfit.accessories.join(', ')}</span>
+                          </div>
                         )}
                       </div>
 
+                      {/* Color Swatches */}
                       <div className="flex gap-2 mb-4">
-                        {suggestResults?.colors?.map((c: string) => (
-                           <div key={c} className="w-6 h-6 rounded-full border shadow-sm" style={{backgroundColor: c}}></div>
+                        {suggestResults?.recommendedColors?.map((c: string) => (
+                           <div key={c} className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded-full">
+                             <div className="w-4 h-4 rounded-full border shadow-sm" style={{backgroundColor: c}}></div>
+                             <span className="text-xs text-gray-500 capitalize">{c}</span>
+                           </div>
                         ))}
                       </div>
 
-                      <p className="text-gray-600 text-sm leading-relaxed mb-6">
-                         {selectedOutfit.description}
-                      </p>
-
                       {selectedOutfit.reason && (
-                         <div className="bg-brand-50 rounded-2xl p-4 mb-6 border border-brand-100">
+                         <div className="bg-brand-50 rounded-2xl p-4 mb-4 border border-brand-100">
                            <h4 className="font-semibold text-brand-800 mb-2">Why it suits you</h4>
                            <p className="text-brand-900/80 text-sm leading-relaxed">{selectedOutfit.reason}</p>
                          </div>
+                      )}
+
+                      {/* Product Cards — Shopping Results */}
+                      {selectedOutfit.keywords?.length > 0 && (
+                        <div className="mb-4">
+                          <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                            <Shirt className="w-4 h-4 text-brand-400" />
+                            Shop This Look
+                          </h4>
+                          <div className="flex flex-col gap-3">
+                            {selectedOutfit.keywords.map((kw: string) => {
+                              const kwLower = kw.trim().toLowerCase();
+                              const products = suggestProducts[kwLower] || [];
+                              if (products.length === 0) return null;
+                              return (
+                                <div key={kwLower}>
+                                  <p className="text-xs font-medium text-gray-500 mb-2 capitalize">{kw}</p>
+                                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                                    {products.map((p: any, pi: number) => (
+                                      <a
+                                        key={pi}
+                                        href={p.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-shrink-0 w-36 bg-gray-50 rounded-xl overflow-hidden border border-gray-100 hover:shadow-md transition-shadow group flex flex-col"
+                                      >
+                                        <div className="w-full aspect-square bg-white flex items-center justify-center overflow-hidden">
+                                          <img src={p.image} alt={p.title} className="w-full h-full object-contain group-hover:scale-105 transition-transform" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                        </div>
+                                        <div className="p-2 flex flex-col flex-grow">
+                                          <p className="text-xs font-medium text-gray-800 line-clamp-2 leading-tight flex-grow">{p.title}</p>
+                                          <p className="text-sm font-bold text-brand-600 mt-1">{p.price}</p>
+                                          <p className="text-[10px] text-gray-400 mt-0.5 mb-2 line-clamp-1">{p.store}</p>
+                                          <button className="w-full py-1.5 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 transition-colors mt-auto">Buy Now</button>
+                                        </div>
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
                       )}
 
                       <button 
@@ -927,8 +1196,14 @@ Output ONLY in JSON format:
                         Try using AI Trial Room
                       </button>
                    </div>
-                </div>
-              </div>
+               </div>
+
+               {/* Debug Panel */}
+               <div className="mt-8 p-4 bg-gray-900 rounded-2xl text-xs text-green-400 font-mono overflow-auto max-h-64 soft-shadow">
+                 <p className="text-white font-bold mb-2">DEBUG: RAW FRONTEND STATE</p>
+                 <pre>{JSON.stringify(suggestResults, null, 2)}</pre>
+               </div>
+             </div>
             )}
 
             {/* Step 8/9: AI Trial Room Result */}

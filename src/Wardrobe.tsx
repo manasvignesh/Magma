@@ -1,523 +1,213 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import {
-  Search, Upload, Bookmark, RotateCcw, Accessibility,
-  SlidersHorizontal, Trash2, CheckCircle2, Menu, X, ChevronUp, Sparkles,
-  Wand2, Loader2,
-} from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
-
-interface ClothingItem { id: string; name: string; img: string; }
-
-const INIT_CLOTHING: Record<string, ClothingItem[]> = {
-  topwear: [
-    { id:'t1', name:'White Tee', img:'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200&h=200&fit=crop' },
-    { id:'t2', name:'Black Tee', img:'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=200&h=200&fit=crop' },
-    { id:'t3', name:'Beige Tee', img:'https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=200&h=200&fit=crop' },
-    { id:'t4', name:'Black Polo', img:'https://images.unsplash.com/photo-1618354691229-88d47f285158?w=200&h=200&fit=crop' },
-    { id:'t5', name:'Green Hoodie', img:'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=200&h=200&fit=crop' },
-    { id:'t6', name:'Gray Sweatshirt', img:'https://images.unsplash.com/photo-1578587018452-892bacefd3f2?w=200&h=200&fit=crop' },
-    { id:'t7', name:'Denim Jacket', img:'https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=200&h=200&fit=crop' },
-    { id:'t8', name:'Flannel Shirt', img:'https://images.unsplash.com/photo-1589310243389-96a5483213a8?w=200&h=200&fit=crop' },
-    { id:'t9', name:'Blue Shirt', img:'https://images.unsplash.com/photo-1598032895397-b9472444bf93?w=200&h=200&fit=crop' },
-    { id:'t10', name:'Striped Tee', img:'https://images.unsplash.com/photo-1627225924765-552d49cf2b5d?w=200&h=200&fit=crop' },
-    { id:'t11', name:'Olive Tee', img:'https://images.unsplash.com/photo-1618354691438-25bc04584c23?w=200&h=200&fit=crop' },
-    { id:'t12', name:'Navy Tee', img:'https://images.unsplash.com/photo-1562157873-818bc0726f68?w=200&h=200&fit=crop' },
-  ],
-  bottomwear: [
-    { id:'b1', name:'Black Cargo', img:'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=200&h=200&fit=crop' },
-    { id:'b2', name:'Blue Jeans', img:'https://images.unsplash.com/photo-1542272454315-4c01d7abdf4a?w=200&h=200&fit=crop' },
-    { id:'b3', name:'Khaki Chinos', img:'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=200&h=200&fit=crop' },
-  ],
-  footwear: [
-    { id:'f1', name:'White Sneakers', img:'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=200&h=200&fit=crop' },
-    { id:'f2', name:'Black Boots', img:'https://images.unsplash.com/photo-1608256246200-53e635b5b65f?w=200&h=200&fit=crop' },
-  ],
-  cap: [
-    { id:'a1', name:'Beige Cap', img:'https://images.unsplash.com/photo-1588850561407-ed78c334e67a?w=200&h=200&fit=crop' },
-    { id:'c2', name:'Black Cap', img:'https://images.unsplash.com/photo-1572307480813-ceb0e59d8325?w=200&h=200&fit=crop' },
-  ],
-  goggles: [
-    { id:'a2', name:'Sunglasses', img:'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=200&h=200&fit=crop' },
-    { id:'g2', name:'Classic Shades', img:'https://images.unsplash.com/photo-1511499767350-a1590fdb7ca7?w=200&h=200&fit=crop' },
-  ],
-  accessories: [
-    { id:'a3', name:'Watch', img:'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200&h=200&fit=crop' },
-  ],
-};
-
-type CatKey = keyof typeof INIT_CLOTHING;
-const CATS: { key: string; label: string }[] = [
-  { key:'topwear', label:'Top Wear' },
-  { key:'bottomwear', label:'Bottom Wear' },
-  { key:'footwear', label:'Foot Wear' },
-  { key:'cap', label:'Cap' },
-  { key:'goggles', label:'Goggles' },
-  { key:'accessories', label:'Accessories' },
-];
-
-const VIBES = ['Gen Z','Minimal','Streetwear','Smart Casual','Wedding','Y2K','Vintage','Athleisure'];
-
-interface SavedOutfit {
-  id: number;
-  selections: Record<string, string[]>;
-  date: string;
-  vibe?: string;
-  aiNote?: string;
-}
-
-/* helpers */
-const fileToBase64 = (file: File): Promise<string> => new Promise((res, rej) => {
-  const r = new FileReader(); r.onload = () => res((r.result as string).split(',')[1]); r.onerror = rej; r.readAsDataURL(file);
-});
-const fileToDataUrl = (file: File): Promise<string> => new Promise((res, rej) => {
-  const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file);
-});
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { RotateCcw, Bookmark, X, ChevronUp, Sparkles, Ruler, Weight, Download } from 'lucide-react';
+import MannequinSVG from './MannequinSVG';
+import ClothingCanvas from './ClothingCanvas';
+import { CLOTHING, CATEGORIES, ZONE_CONFIG, calcBodyScales, type CatKey, type ClothingItem } from './WardrobeData';
 
 const Wardrobe: React.FC = () => {
-  const [wardrobeStore, setWardrobeStore] = useState<Record<string, ClothingItem[]>>({...INIT_CLOTHING});
-  const [cat, setCat] = useState<string>('topwear');
-  const [selections, setSelections] = useState<Record<string, string[]>>({
-    topwear:[], bottomwear:[], footwear:[], cap:[], goggles:[], accessories:[],
-  });
+  const [height, setHeight] = useState(() => Number(localStorage.getItem('wb_h')) || 175);
+  const [weight, setWeight] = useState(() => Number(localStorage.getItem('wb_w')) || 70);
+  const [activeZone, setActiveZone] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>([]);
-  const [showSaveToast, setShowSaveToast] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [showOutfitGen, setShowOutfitGen] = useState(false);
-  const [selectedVibe, setSelectedVibe] = useState('Streetwear');
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiStylingNote, setAiStylingNote] = useState('');
+  const [drawerCat, setDrawerCat] = useState<CatKey>('topwear');
+  const [equipped, setEquipped] = useState<Record<string, string | null>>({ cap: null, goggles: null, topwear: null, bottomwear: null, footwear: null });
+  const [showBody, setShowBody] = useState(false);
+  const [toast, setToast] = useState('');
   const drawerRef = useRef<HTMLDivElement>(null);
-  const uploadRef = useRef<HTMLInputElement>(null);
+  const mannequinRef = useRef<HTMLDivElement>(null);
 
-  const items = wardrobeStore[cat] || [];
-  const label = CATS.find(c => c.key === cat)?.label || '';
-  const getCount = (key: string) => (selections[key] || []).length;
-  const totalItems = Object.values(selections).reduce((sum, arr) => sum + arr.length, 0);
+  const scales = calcBodyScales(height, weight);
+  const bmi = weight / Math.pow(height / 100, 2);
+  const bodyLabel = bmi < 18.5 ? 'Slim' : bmi < 25 ? 'Average' : bmi < 30 ? 'Athletic' : 'Broad';
 
-  // Find item by id across all categories
+  useEffect(() => { localStorage.setItem('wb_h', String(height)); localStorage.setItem('wb_w', String(weight)); }, [height, weight]);
+
   const findItem = (id: string): ClothingItem | undefined => {
-    for (const arr of Object.values(wardrobeStore)) {
-      const found = arr.find(i => i.id === id);
-      if (found) return found;
-    }
-    return undefined;
+    for (const arr of Object.values(CLOTHING)) { const f = arr.find(i => i.id === id); if (f) return f; }
   };
 
-  // Get first selected item for a category (for mannequin overlay)
-  const getSelectedImg = (key: string): string | null => {
-    const sel = selections[key];
-    if (!sel || sel.length === 0) return null;
-    const item = findItem(sel[0]);
-    return item?.img || null;
-  };
-
-  const toggleItem = useCallback((itemId: string) => {
-    setSelections(prev => {
-      const current = prev[cat] || [];
-      const exists = current.includes(itemId);
-      return { ...prev, [cat]: exists ? current.filter(id => id !== itemId) : [...current, itemId] };
-    });
-  }, [cat]);
-
-  const openDrawerTo = useCallback((category: string) => {
-    setCat(category);
+  const openZone = useCallback((zone: string) => {
+    setActiveZone(zone);
+    setDrawerCat(zone as CatKey);
     setDrawerOpen(true);
   }, []);
 
-  const saveOutfit = useCallback(() => {
-    if (totalItems === 0) return;
-    const outfit: SavedOutfit = {
-      id: Date.now(), selections: { ...selections }, date: new Date().toLocaleDateString(),
-      vibe: selectedVibe, aiNote: aiStylingNote,
-    };
-    setSavedOutfits(prev => [outfit, ...prev]);
-    setShowSaveToast(true);
-    setTimeout(() => setShowSaveToast(false), 2500);
-  }, [selections, totalItems, selectedVibe, aiStylingNote]);
-
-  const resetSelections = useCallback(() => {
-    setSelections({ topwear:[], bottomwear:[], footwear:[], cap:[], goggles:[], accessories:[] });
-    setAiStylingNote('');
+  const equipItem = useCallback((cat: CatKey, itemId: string) => {
+    setEquipped(prev => ({ ...prev, [cat]: prev[cat] === itemId ? null : itemId }));
   }, []);
 
-  // ── UPLOAD + AI CATEGORIZATION ──
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      const base64 = await fileToBase64(file);
-      const apiKey = (import.meta as any).env?.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-      let category = 'topwear'; // fallback
-      if (apiKey) {
-        const ai = new GoogleGenAI({ apiKey });
-        const res = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [{
-            role: 'user',
-            parts: [
-              { inlineData: { data: base64, mimeType: file.type } },
-              { text: 'Classify this clothing item into one category only: topwear, bottomwear, footwear, cap, goggles, accessories. Return only the lowercase category name, nothing else.' },
-            ],
-          }],
-        });
-        const raw = (res as any).text?.trim?.() || (res as any).candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-        const mapped = raw.toLowerCase().replace(/\s/g,'');
-        if (['topwear','bottomwear','footwear','cap','goggles','accessories'].includes(mapped)) category = mapped;
-      }
-      const newItem: ClothingItem = { id: `u${Date.now()}`, name: file.name.split('.')[0], img: dataUrl };
-      setWardrobeStore(prev => ({ ...prev, [category]: [...(prev[category] || []), newItem] }));
-      setCat(category);
-      setShowSaveToast(true);
-      setTimeout(() => setShowSaveToast(false), 2000);
-    } catch (err) { console.error('Upload error:', err); }
-    setUploading(false);
-    if (uploadRef.current) uploadRef.current.value = '';
-  };
+  const resetAll = useCallback(() => {
+    setEquipped({ cap: null, goggles: null, topwear: null, bottomwear: null, footwear: null });
+    setActiveZone(null);
+  }, []);
 
-  // ── AI OUTFIT GENERATOR ──
-  const generateOutfit = async () => {
-    setAiGenerating(true);
-    setAiStylingNote('');
-    try {
-      const apiKey = (import.meta as any).env?.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-      if (!apiKey) { setAiStylingNote('Set GEMINI_API_KEY to use AI styling.'); setAiGenerating(false); return; }
-      const ai = new GoogleGenAI({ apiKey });
-      const inventory: Record<string, string[]> = {};
-      for (const [k, arr] of Object.entries(wardrobeStore)) { inventory[k] = arr.map(i => `${i.id}:${i.name}`); }
-      const res = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{
-          role: 'user',
-          parts: [{ text: `You are a fashion stylist. Given this wardrobe inventory:\n${JSON.stringify(inventory)}\n\nCreate a ${selectedVibe} outfit. Pick exactly ONE item id from each available category (topwear, bottomwear, footwear). Optionally pick cap/goggles/accessories.\n\nReturn ONLY valid JSON:\n{"topwear":"id","bottomwear":"id","footwear":"id","cap":"id or null","goggles":"id or null","accessories":"id or null","note":"2-sentence styling explanation"}` }],
-        }],
-      });
-      const raw = (res as any).text?.trim?.() || (res as any).candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-      const jsonStr = raw.replace(/```json\n?/g,'').replace(/```/g,'').trim();
-      const parsed = JSON.parse(jsonStr);
-      const newSel: Record<string, string[]> = { topwear:[], bottomwear:[], footwear:[], cap:[], goggles:[], accessories:[] };
-      for (const key of Object.keys(newSel)) {
-        if (parsed[key] && parsed[key] !== 'null' && parsed[key] !== null) newSel[key] = [parsed[key]];
-      }
-      setSelections(newSel);
-      setAiStylingNote(parsed.note || 'Outfit generated!');
-    } catch (err) { console.error('AI gen error:', err); setAiStylingNote('Could not generate outfit. Try again.'); }
-    setAiGenerating(false);
-  };
+  const saveOutfit = useCallback(() => {
+    const outfits = JSON.parse(localStorage.getItem('wb_outfits') || '[]');
+    outfits.unshift({ id: Date.now(), equipped: { ...equipped }, date: new Date().toLocaleDateString() });
+    localStorage.setItem('wb_outfits', JSON.stringify(outfits.slice(0, 20)));
+    setToast('Outfit saved!');
+    setTimeout(() => setToast(''), 2000);
+  }, [equipped]);
+
+  const totalEquipped = Object.values(equipped).filter(Boolean).length;
 
   useEffect(() => {
     if (!drawerOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) setDrawerOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const h = (e: MouseEvent) => { if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) { setDrawerOpen(false); setActiveZone(null); } };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, [drawerOpen]);
 
   return (
-    <div className="relative flex flex-col w-full" style={{ height:'calc(100vh - 80px)', background:'linear-gradient(180deg,#eef2ff 0%,#f0f4ff 40%,#fff 100%)' }}>
-
-      {/* ── HEADER ── */}
+    <div className="wardrobe-bg relative flex flex-col w-full overflow-hidden" style={{ height: 'calc(100vh - 80px)' }}>
+      {/* Header */}
       <div className="px-5 pt-4 pb-2 flex items-center justify-between z-10 flex-shrink-0">
         <div>
-          <h1 style={{ fontWeight:800, fontSize:'1.4rem', color:'#111', letterSpacing:'-0.02em', lineHeight:1.2 }}>Your Digital Wardrobe</h1>
-          <p style={{ color:'#7c8db5', fontSize:'0.72rem', marginTop:2, fontWeight:500 }}>Organize, mix, and match your collection.</p>
+          <h1 className="text-xl font-extrabold text-white tracking-tight">Digital Wardrobe</h1>
+          <p className="text-[11px] text-indigo-300/70 font-medium mt-0.5">Interactive Mannequin Styling</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowOutfitGen(true)} title="AI Stylist"
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all hover:scale-105"
-            style={{ background:'linear-gradient(135deg,#6366f1,#818cf8)', boxShadow:'0 2px 10px rgba(99,102,241,0.4)' }}>
-            <Wand2 className="w-4 h-4" />
+          <button onClick={() => setShowBody(!showBody)} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-105 glass-panel-light" title="Body Settings">
+            <Ruler className="w-4 h-4 text-indigo-300" />
           </button>
-          <button onClick={resetSelections} title="Clear all"
-            className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"
-            style={{ boxShadow:'0 2px 8px rgba(0,0,0,0.06)', border:'1px solid #e8eaf0' }}>
-            <Trash2 className="w-4 h-4" />
+          <button onClick={resetAll} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-105 glass-panel-light" title="Reset">
+            <RotateCcw className="w-4 h-4 text-indigo-300" />
           </button>
         </div>
       </div>
 
-      {/* ── MANNEQUIN AREA ── */}
-      <div className="flex-1 relative overflow-hidden mx-3 rounded-3xl"
-        style={{ background:'linear-gradient(180deg,#eef2ff 0%,#f5f7ff 100%)', border:'1px solid #dde3f0', minHeight:0 }}>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <img src="/manequin.png" alt="Mannequin" className="h-full w-full object-contain" />
+      {/* Body Input Panel */}
+      <AnimatePresence>
+        {showBody && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden flex-shrink-0 px-5">
+            <div className="glass-panel rounded-2xl p-4 mb-2">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-indigo-200">Body Proportions</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc' }}>{bodyLabel} • BMI {bmi.toFixed(1)}</span>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <div className="flex justify-between text-[10px] text-indigo-300/70 mb-1"><span>Height</span><span className="font-bold text-indigo-200">{height} cm</span></div>
+                  <input type="range" min="150" max="200" value={height} onChange={e => setHeight(+e.target.value)} className="w-full accent-indigo-500 h-1" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between text-[10px] text-indigo-300/70 mb-1"><span>Weight</span><span className="font-bold text-indigo-200">{weight} kg</span></div>
+                  <input type="range" min="40" max="130" value={weight} onChange={e => setWeight(+e.target.value)} className="w-full accent-indigo-500 h-1" />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mannequin Area */}
+      <div className="flex-1 relative mx-3 rounded-3xl overflow-hidden" style={{ minHeight: 0, background: 'radial-gradient(ellipse at 50% 30%, rgba(99,102,241,0.08) 0%, transparent 70%)' }} ref={mannequinRef}>
+        {/* Ambient glow */}
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 50% 50%, rgba(99,102,241,0.06) 0%, transparent 60%)' }} />
+
+        {/* SVG Mannequin + Canvas Clothing */}
+        <div className="absolute inset-0 flex items-center justify-center p-4" style={{ transform: `scale(${scales.overall})`, transition: 'transform 0.5s ease' }}>
+          <div className="h-full relative" style={{ aspectRatio: '200/480' }}>
+            <MannequinSVG scales={scales} activeZone={activeZone} onZoneClick={openZone} />
+            <ClothingCanvas equipped={equipped} scales={scales} findItem={findItem} />
+          </div>
         </div>
 
-        {/* Clothing overlays on mannequin */}
-        {getSelectedImg('cap') && (
-          <div className="absolute z-30 flex justify-center items-end" style={{ top:'3%', left:'35%', width:'30%', height:'12%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('cap')!} alt="" className="max-w-full max-h-full object-contain" style={{ filter:'drop-shadow(0 4px 8px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
-          </div>
-        )}
-        {getSelectedImg('goggles') && (
-          <div className="absolute z-40 flex justify-center items-center" style={{ top:'13%', left:'35%', width:'30%', height:'8%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('goggles')!} alt="" className="max-w-full max-h-full object-contain" style={{ filter:'drop-shadow(0 2px 6px rgba(0,0,0,0.2))', mixBlendMode:'multiply' }} />
-          </div>
-        )}
-        {getSelectedImg('topwear') && (
-          <div className="absolute z-20 flex justify-center items-center" style={{ top:'18%', left:'22%', width:'56%', height:'35%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('topwear')!} alt="" className="w-full h-full object-contain" style={{ filter:'drop-shadow(0 6px 12px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
-          </div>
-        )}
-        {getSelectedImg('bottomwear') && (
-          <div className="absolute z-10 flex justify-center items-start" style={{ top:'46%', left:'25%', width:'50%', height:'36%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('bottomwear')!} alt="" className="w-full h-full object-contain" style={{ filter:'drop-shadow(0 6px 12px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
-          </div>
-        )}
-        {getSelectedImg('footwear') && (
-          <div className="absolute z-20 flex justify-center items-end" style={{ bottom:'4%', left:'28%', width:'44%', height:'14%', transition:'all 0.5s ease', animation:'fadeZoom 0.5s ease' }}>
-            <img src={getSelectedImg('footwear')!} alt="" className="w-full h-full object-contain" style={{ filter:'drop-shadow(0 4px 8px rgba(0,0,0,0.15))', mixBlendMode:'multiply' }} />
-          </div>
-        )}
-
-        {/* Hotspots */}
-        <button onClick={() => openDrawerTo('cap')} className="absolute cursor-pointer hover:scale-105 transition-transform" style={{ top:'4%', left:'2%', width:'28%', height:'8%', background:'transparent', border:'none' }} />
-        <button onClick={() => openDrawerTo('goggles')} className="absolute cursor-pointer hover:scale-105 transition-transform" style={{ top:'13%', left:'2%', width:'28%', height:'8%', background:'transparent', border:'none' }} />
-        <button onClick={() => openDrawerTo('topwear')} className="absolute cursor-pointer hover:scale-105 transition-transform" style={{ top:'28%', right:'2%', width:'30%', height:'8%', background:'transparent', border:'none' }} />
-        <button onClick={() => openDrawerTo('bottomwear')} className="absolute cursor-pointer hover:scale-105 transition-transform" style={{ top:'52%', left:'2%', width:'30%', height:'8%', background:'transparent', border:'none' }} />
-        <button onClick={() => openDrawerTo('footwear')} className="absolute cursor-pointer hover:scale-105 transition-transform" style={{ bottom:'12%', right:'2%', width:'30%', height:'8%', background:'transparent', border:'none' }} />
-
-        {/* Badges */}
-        {(['cap','goggles','topwear','bottomwear','footwear'] as string[]).map(k => {
-          if (getCount(k) === 0) return null;
-          const pos: Record<string,any> = { cap:{top:'5%',left:'14%'}, goggles:{top:'14%',left:'14%'}, topwear:{top:'29%',right:'10%'}, bottomwear:{top:'53%',left:'14%'}, footwear:{bottom:'13%',right:'10%'} };
-          return <div key={k} className="absolute flex items-center justify-center w-5 h-5 rounded-full text-white text-[9px] font-bold" style={{ ...pos[k], background:'#6366f1', boxShadow:'0 2px 8px rgba(99,102,241,0.5)' }}>{getCount(k)}</div>;
-        })}
-
-        {/* AI Styling Note */}
-        {aiStylingNote && (
-          <div className="absolute bottom-3 left-3 right-3 px-4 py-3 rounded-2xl text-xs font-medium" style={{ background:'rgba(255,255,255,0.85)', backdropFilter:'blur(12px)', border:'1px solid rgba(99,102,241,0.2)', color:'#333', animation:'slideUp 0.4s ease' }}>
-            <div className="flex items-center gap-2 mb-1"><Sparkles className="w-3.5 h-3.5 text-indigo-500" /><span className="font-bold text-indigo-600">AI Stylist</span></div>
-            {aiStylingNote}
-          </div>
-        )}
+        {/* Zone Labels */}
+        {Object.entries(ZONE_CONFIG).map(([key, cfg]) => (
+          <button key={key} onClick={() => openZone(key)} className="absolute transition-all duration-300 group" style={{ top: cfg.top, left: cfg.left, width: cfg.width, height: cfg.height }}>
+            <div className={`absolute -top-0 -right-0 flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[9px] font-bold whitespace-nowrap transition-all ${activeZone === key ? 'opacity-100 bg-indigo-500/30 text-indigo-200 scale-105' : 'opacity-0 group-hover:opacity-80 bg-white/10 text-white/60'}`}>
+              {cfg.label}
+              {equipped[key] && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />}
+            </div>
+          </button>
+        ))}
       </div>
 
-      <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
-        <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
-        <div className="flex gap-2">
-          <button onClick={resetSelections} title="Reset"
-            className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors"
-            style={{ boxShadow:'0 2px 8px rgba(0,0,0,0.06)', border:'1px solid #eee' }}>
-            <RotateCcw className="w-[18px] h-[18px]" />
-          </button>
-          <button onClick={() => uploadRef.current?.click()} title="Upload" disabled={uploading}
-            className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors"
-            style={{ boxShadow:'0 2px 8px rgba(0,0,0,0.06)', border:'1px solid #eee' }}>
-            {uploading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Upload className="w-[18px] h-[18px]" />}
-          </button>
+      {/* Active Outfit Strip */}
+      <div className="flex items-center gap-2 px-4 py-2.5 flex-shrink-0">
+        <div className="flex gap-1.5 flex-1 overflow-x-auto scrollbar-hide">
+          {CATEGORIES.map(c => {
+            const eqId = equipped[c.key];
+            const item = eqId ? findItem(eqId) : null;
+            return (
+              <button key={c.key} onClick={() => openZone(c.key)} className="flex-shrink-0 relative rounded-xl overflow-hidden transition-all hover:scale-105" style={{ width: 44, height: 44, border: item ? '2px solid #6366f1' : '1.5px solid rgba(255,255,255,0.1)', background: item ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.04)' }}>
+                {item ? <img src={item.img} alt="" className="w-full h-full object-cover" style={{ opacity: 0.85 }} /> : <span className="text-xs">{c.icon}</span>}
+              </button>
+            );
+          })}
         </div>
-
-        <button onClick={() => setDrawerOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all hover:scale-[1.02] active:scale-95"
-          style={{ background:'white', color:'#333', boxShadow:'0 2px 10px rgba(0,0,0,0.08)', border:'1px solid #eee' }}>
-          <Menu className="w-4 h-4" />
-          Select Item
-          {totalItems > 0 && (
-            <span className="ml-0.5 w-5 h-5 rounded-full text-white text-[9px] font-bold flex items-center justify-center"
-              style={{ background:'#6366f1' }}>
-              {totalItems}
-            </span>
-          )}
-          <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+        <button onClick={() => setDrawerOpen(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all hover:scale-[1.02] glass-panel-light text-indigo-200">
+          <ChevronUp className="w-3.5 h-3.5" /> Browse
         </button>
-
-        <button onClick={saveOutfit}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-xs font-bold transition-all hover:scale-[1.02] active:scale-95"
-          style={{
-            background: totalItems > 0 ? 'linear-gradient(135deg,#6366f1,#818cf8)' : '#ddd',
-            boxShadow: totalItems > 0 ? '0 4px 14px rgba(99,102,241,0.35)' : 'none',
-            cursor: totalItems > 0 ? 'pointer' : 'not-allowed',
-          }}>
-          <Bookmark className="w-3.5 h-3.5" /> Save Outfit
+        <button onClick={saveOutfit} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold text-white transition-all hover:scale-[1.02]"
+          style={{ background: totalEquipped > 0 ? 'linear-gradient(135deg,#6366f1,#818cf8)' : 'rgba(255,255,255,0.06)', cursor: totalEquipped > 0 ? 'pointer' : 'default', opacity: totalEquipped > 0 ? 1 : 0.4 }}>
+          <Bookmark className="w-3.5 h-3.5" /> Save
         </button>
       </div>
 
-      {/* ── SAVE TOAST ── */}
-      {showSaveToast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] px-5 py-3 rounded-2xl bg-white text-gray-900 text-sm font-bold flex items-center gap-2"
-          style={{ boxShadow:'0 8px 30px rgba(0,0,0,0.15)', animation:'slideDown 0.3s ease' }}>
-          <Sparkles className="w-4 h-4 text-rose-500" />
-          Outfit saved! ({totalItems} items)
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="fixed top-5 left-1/2 -translate-x-1/2 z-[90] px-5 py-2.5 rounded-2xl text-sm font-bold text-white flex items-center gap-2" style={{ background: 'linear-gradient(135deg,#6366f1,#818cf8)', boxShadow: '0 8px 30px rgba(99,102,241,0.4)' }}>
+            <Sparkles className="w-4 h-4" /> {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 transition-opacity duration-300" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', opacity: drawerOpen ? 1 : 0, pointerEvents: drawerOpen ? 'auto' : 'none' }} onClick={() => { setDrawerOpen(false); setActiveZone(null); }} />
+
+      {/* Bottom Drawer */}
+      <div ref={drawerRef} className="fixed left-0 right-0 z-50 flex flex-col rounded-t-3xl overflow-hidden" style={{ bottom: 0, maxHeight: '70vh', transform: drawerOpen ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.4s cubic-bezier(0.32,0.72,0,1)', background: 'linear-gradient(180deg, #1a1f4e 0%, #0f1338 100%)', boxShadow: drawerOpen ? '0 -10px 50px rgba(0,0,0,0.5)' : 'none', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex justify-center pt-3 pb-1 cursor-grab" onClick={() => { setDrawerOpen(false); setActiveZone(null); }}>
+          <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
-      )}
-
-      {/* ── BACKDROP ── */}
-      <div
-        className="fixed inset-0 z-40 transition-opacity duration-300"
-        style={{
-          background:'rgba(0,0,0,0.35)',
-          backdropFilter:'blur(2px)',
-          opacity: drawerOpen ? 1 : 0,
-          pointerEvents: drawerOpen ? 'auto' : 'none',
-        }}
-        onClick={() => setDrawerOpen(false)}
-      />
-
-      {/* ── BOTTOM SHEET DRAWER ── */}
-      <div
-        ref={drawerRef}
-        className="fixed left-0 right-0 z-50 flex flex-col bg-white rounded-t-3xl overflow-hidden"
-        style={{
-          bottom: 0,
-          maxHeight: '78vh',
-          transform: drawerOpen ? 'translateY(0)' : 'translateY(100%)',
-          transition: 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
-          boxShadow: drawerOpen ? '0 -8px 40px rgba(0,0,0,0.15)' : 'none',
-        }}
-      >
-        {/* Drawer handle */}
-        <div className="flex items-center justify-center pt-3 pb-1 flex-shrink-0 cursor-grab"
-          onClick={() => setDrawerOpen(false)}>
-          <div className="w-10 h-1 rounded-full bg-gray-300" />
-        </div>
-
-        {/* Drawer header */}
-        <div className="flex items-center justify-between px-5 pb-2 pt-1 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 pb-2 pt-1">
           <div>
-            <h2 style={{ fontWeight:800, fontSize:'1.1rem', color:'#111' }}>Select Item</h2>
-            {totalItems > 0 && (
-              <p style={{ fontSize:11, color:'#999', marginTop:1 }}>{totalItems} item{totalItems > 1 ? 's' : ''} selected</p>
-            )}
+            <h2 className="text-white font-extrabold text-lg">Select {CATEGORIES.find(c => c.key === drawerCat)?.label || 'Item'}</h2>
+            <p className="text-indigo-300/50 text-[10px] font-medium mt-0.5">Tap to equip • Tap again to remove</p>
           </div>
-          <button onClick={() => setDrawerOpen(false)}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
-            <X className="w-4 h-4" />
+          <button onClick={() => { setDrawerOpen(false); setActiveZone(null); }} className="w-8 h-8 rounded-full flex items-center justify-center glass-panel-light">
+            <X className="w-4 h-4 text-indigo-300" />
           </button>
         </div>
-
-        {/* Drawer content */}
         <div className="flex-1 overflow-y-auto scrollbar-hide px-5 pb-8">
-          <div className="flex flex-col gap-4">
-
-            {/* Category Tabs */}
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
-              {CATS.map(c => {
-                const count = getCount(c.key);
-                return (
-                  <button key={c.key} onClick={() => setCat(c.key)}
-                    className="whitespace-nowrap px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5"
-                    style={cat === c.key
-                      ? { background:'#eef2ff', color:'#6366f1', border:'1.5px solid #c7d2fe' }
-                      : { background:'#f9f9f9', color:'#999', border:'1.5px solid transparent' }
-                    }>
-                    {c.label}
-                    {count > 0 && (
-                      <span className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center text-white"
-                        style={{ background:'#6366f1' }}>
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Search + Upload */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <button className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl bg-white hover:bg-gray-50 transition-colors"
-                style={{ border:'1.5px solid #f0f0f0', boxShadow:'0 2px 8px rgba(0,0,0,0.04)' }}>
-                <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center"
-                  style={{ border:'1.5px solid #eee', boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <Search className="w-4 h-4 text-gray-800" />
-                </div>
-                <span style={{ fontSize:9, fontWeight:700, color:'#333' }}>Search Similar</span>
+          {/* Category Tabs */}
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-3">
+            {CATEGORIES.map(c => (
+              <button key={c.key} onClick={() => { setDrawerCat(c.key); setActiveZone(c.key); }}
+                className="whitespace-nowrap px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5"
+                style={drawerCat === c.key ? { background: 'rgba(99,102,241,0.25)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.4)' } : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.4)', border: '1px solid transparent' }}>
+                <span>{c.icon}</span> {c.label}
+                {equipped[c.key] && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />}
               </button>
-              <button onClick={() => uploadRef.current?.click()} disabled={uploading}
-                className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl bg-white hover:bg-indigo-50 transition-colors"
-                style={{ border:'1.5px solid #e0e7ff', boxShadow:'0 2px 8px rgba(99,102,241,0.08)' }}>
-                <div className="w-9 h-9 rounded-full flex items-center justify-center"
-                  style={{ background:'linear-gradient(135deg,#6366f1,#818cf8)', boxShadow:'0 2px 8px rgba(99,102,241,0.3)' }}>
-                  {uploading ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Upload className="w-4 h-4 text-white" />}
-                </div>
-                <span style={{ fontSize:9, fontWeight:700, color:'#6366f1' }}>{uploading ? 'Classifying...' : 'Upload Image'}</span>
-              </button>
-            </div>
-
-            {/* Items heading */}
-            <h3 style={{ fontWeight:700, fontSize:'0.85rem', color:'#222', marginTop:2 }}>
-              Your {label}
-              {getCount(cat) > 0 && (
-                <span style={{ color:'#6366f1', marginLeft:6, fontSize:'0.75rem' }}>
-                  ({getCount(cat)} selected)
-                </span>
-              )}
-            </h3>
-
-            {/* Items grid */}
-            <div className="grid grid-cols-4 gap-2.5">
-              {items.map(item => {
-                const isSel = (selections[cat] || []).includes(item.id);
-                return (
-                  <button key={item.id} onClick={() => toggleItem(item.id)}
-                    className="relative aspect-square rounded-xl overflow-hidden transition-all active:scale-95"
-                    style={{
-                      border: isSel ? '2.5px solid #6366f1' : '1.5px solid #f0f0f0',
-                      boxShadow: isSel ? '0 0 12px rgba(99,102,241,0.3)' : 'none',
-                      background:'#fafafa',
-                    }}>
-                    <img src={item.img} alt={item.name} className="w-full h-full object-cover" loading="lazy" />
-                    {isSel && (
-                      <div className="absolute top-1 right-1">
-                        <CheckCircle2 className="w-5 h-5 text-indigo-500" fill="white" strokeWidth={2.5} />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            ))}
+          </div>
+          {/* Clothing Grid */}
+          <div className="grid grid-cols-3 gap-2.5">
+            {(CLOTHING[drawerCat] || []).map(item => {
+              const isEq = equipped[drawerCat] === item.id;
+              return (
+                <motion.button key={item.id} onClick={() => equipItem(drawerCat, item.id)} whileTap={{ scale: 0.93 }}
+                  className="relative rounded-2xl overflow-hidden transition-all" style={{ aspectRatio: '1', border: isEq ? '2px solid #818cf8' : '1.5px solid rgba(255,255,255,0.06)', boxShadow: isEq ? '0 0 20px rgba(99,102,241,0.4)' : 'none', background: 'rgba(255,255,255,0.03)' }}>
+                  <img src={item.img} alt={item.name} className="w-full h-full object-cover" loading="lazy" style={{ opacity: isEq ? 1 : 0.75, transition: 'opacity 0.3s' }} />
+                  {isEq && (
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#6366f1' }}>
+                      <Sparkles className="w-3 h-3 text-white" />
+                    </motion.div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5" style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.7))' }}>
+                    <p className="text-[9px] font-bold text-white/80 truncate">{item.name}</p>
+                  </div>
+                  {item.color && <div className="absolute top-1.5 left-1.5 w-3 h-3 rounded-full border border-white/20" style={{ background: item.color }} />}
+                </motion.button>
+              );
+            })}
           </div>
         </div>
       </div>
-
-      {/* ── OUTFIT GENERATOR MODAL ── */}
-      {showOutfitGen && (
-        <>
-          <div className="fixed inset-0 z-[70] bg-black/40" style={{ backdropFilter:'blur(4px)' }} onClick={() => setShowOutfitGen(false)} />
-          <div className="fixed left-4 right-4 z-[80] rounded-3xl bg-white p-5 flex flex-col gap-4" style={{ top:'50%', transform:'translateY(-50%)', boxShadow:'0 20px 60px rgba(0,0,0,0.2)', animation:'fadeZoom 0.3s ease' }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:'linear-gradient(135deg,#6366f1,#818cf8)' }}>
-                  <Wand2 className="w-4 h-4 text-white" />
-                </div>
-                <h2 style={{ fontWeight:800, fontSize:'1.1rem', color:'#111' }}>AI Outfit Generator</h2>
-              </div>
-              <button onClick={() => setShowOutfitGen(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center"><X className="w-4 h-4" /></button>
-            </div>
-            <p style={{ fontSize:12, color:'#666' }}>Pick a style vibe and let AI assemble the perfect outfit from your wardrobe.</p>
-            <div className="flex flex-wrap gap-2">
-              {VIBES.map(v => (
-                <button key={v} onClick={() => setSelectedVibe(v)}
-                  className="px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all"
-                  style={selectedVibe === v
-                    ? { background:'#6366f1', color:'white', boxShadow:'0 4px 12px rgba(99,102,241,0.3)' }
-                    : { background:'#f4f4f5', color:'#666' }
-                  }>{v}</button>
-              ))}
-            </div>
-            <button onClick={generateOutfit} disabled={aiGenerating}
-              className="w-full py-3 rounded-xl text-white text-sm font-bold transition-all hover:scale-[1.01] active:scale-95 flex items-center justify-center gap-2"
-              style={{ background:'linear-gradient(135deg,#6366f1,#818cf8)', boxShadow:'0 4px 16px rgba(99,102,241,0.4)' }}>
-              {aiGenerating ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</> : <><Sparkles className="w-4 h-4" /> Generate {selectedVibe} Outfit</>}
-            </button>
-            {aiStylingNote && (
-              <div className="px-4 py-3 rounded-xl text-xs" style={{ background:'#eef2ff', color:'#4338ca', border:'1px solid #c7d2fe' }}>
-                <span className="font-bold">✨ AI Note: </span>{aiStylingNote}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Animations */}
-      <style>{`
-        @keyframes slideDown { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
-        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes fadeZoom { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-      `}</style>
     </div>
   );
 };

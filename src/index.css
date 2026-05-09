@@ -123,3 +123,42 @@ body {
   font-weight: 600;
   color: #111827;
 }
+
+/* Wardrobe Mannequin System */
+@keyframes zonePulse {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(99,102,241,0.3)); }
+  50% { filter: drop-shadow(0 0 14px rgba(99,102,241,0.6)); }
+}
+@keyframes zoneGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+@keyframes floatIn {
+  from { opacity: 0; transform: translateY(60px) scale(0.7); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes subtleBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.01); }
+}
+.mannequin-breathe { animation: subtleBreathe 4s ease-in-out infinite; }
+.zone-active { animation: zonePulse 2s ease-in-out infinite; }
+.zone-glow { animation: zoneGlow 2s ease-in-out infinite; }
+.clothing-enter { animation: floatIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+.wardrobe-bg {
+  background: linear-gradient(165deg, #0a0f2e 0%, #121845 40%, #1a1f55 70%, #0e1338 100%);
+}
+.glass-panel {
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.glass-panel-light {
+  background: rgba(255,255,255,0.08);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.glow-indigo { box-shadow: 0 0 20px rgba(99,102,241,0.4), 0 0 60px rgba(99,102,241,0.15); }
+.glow-selected { box-shadow: 0 0 0 2px #6366f1, 0 0 20px rgba(99,102,241,0.5); }
